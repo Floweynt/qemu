@@ -39,6 +39,7 @@
 #include "hw/core/irq.h"
 #include "hw/core/loader.h"
 #include "multiboot.h"
+#include "x86-limine.h"
 #include "elf.h"
 #include "standard-headers/asm-x86/bootparam.h"
 #include CONFIG_DEVICES
@@ -698,6 +699,14 @@ void x86_load_linux(X86MachineState *x86ms,
                            kernel_cmdline, kernel_size, header)) {
             return;
         }
+
+        if (machine->kernel_boot_protocol == KERNEL_BOOT_PROTOCOL_LIMINE &&
+            x86_load_limine(kernel_filename, f, kernel_size, header,
+                            fw_cfg, x86ms)) {
+            fclose(f);
+            return;
+        }
+
         /*
          * Check if the file is an uncompressed kernel file (ELF) and load it,
          * saving the PVH entry point used by the x86/HVM direct boot ABI.

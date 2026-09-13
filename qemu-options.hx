@@ -4614,11 +4614,36 @@ Linux kernel for how kernels for that architecture must be started.
 ERST
 
 DEF("kernel", HAS_ARG, QEMU_OPTION_kernel, \
-    "-kernel bzImage use 'bzImage' as kernel image\n", QEMU_ARCH_ALL)
+    "-kernel bzImage[,option=value[,...]]\n"
+    "                use 'bzImage' as kernel image\n", QEMU_ARCH_ALL)
 SRST
-``-kernel bzImage``
+``-kernel bzImage[,option=value[,...]]``
     Use bzImage as kernel image. The kernel can be either a Linux kernel
     or in multiboot format.
+
+    ``protocol=native|limine``
+        Select the boot protocol. ``native`` (default) uses the machine's
+        built-in kernel loading. ``limine`` uses the Limine boot protocol.
+
+    The following options are only valid with ``protocol=limine``:
+
+    ``kaslr=on|off``
+        Enable kernel address space layout randomisation (default off).
+
+    ``randomise-hhdm-base=on|off``
+        Randomise the higher half direct map base address (default off).
+
+    ``paging-mode=4level|5level``
+        Set both min and max paging mode.
+
+    ``min-paging-mode=4level|5level``
+        Set minimum paging mode.
+
+    ``max-paging-mode=4level|5level``
+        Set maximum paging mode.
+
+    ``resolution=WxHxBPP``
+        Requested display resolution (e.g. ``1024x768x32``).
 ERST
 
 DEF("shim", HAS_ARG, QEMU_OPTION_shim, \

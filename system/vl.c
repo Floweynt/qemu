@@ -313,6 +313,41 @@ static QemuOptsList qemu_boot_opts = {
     },
 };
 
+static QemuOptsList qemu_kernel_opts = {
+    .name = "kernel-opts",
+    .implied_opt_name = "file",
+    .merge_lists = true,
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_kernel_opts.head),
+    .desc = {
+        {
+            .name = "file",
+            .type = QEMU_OPT_STRING,
+        }, {
+            .name = "protocol",
+            .type = QEMU_OPT_STRING,
+        }, {
+            .name = "kaslr",
+            .type = QEMU_OPT_BOOL,
+        }, {
+            .name = "randomise-hhdm-base",
+            .type = QEMU_OPT_BOOL,
+        }, {
+            .name = "max-paging-mode",
+            .type = QEMU_OPT_STRING,
+        }, {
+            .name = "min-paging-mode",
+            .type = QEMU_OPT_STRING,
+        }, {
+            .name = "paging-mode",
+            .type = QEMU_OPT_STRING,
+        }, {
+            .name = "resolution",
+            .type = QEMU_OPT_STRING,
+        },
+        { /* end of list */ }
+    },
+};
+
 static QemuOptsList qemu_add_fd_opts = {
     .name = "add-fd",
     .head = QTAILQ_HEAD_INITIALIZER(qemu_add_fd_opts.head),
@@ -2510,12 +2545,12 @@ static void configure_accelerators(const char *progname)
 
 static void qemu_validate_options(const QDict *machine_opts)
 {
-    const char *kernel_filename = qdict_get_try_str(machine_opts, "kernel");
+    QObject *kernel_obj = qdict_get(machine_opts, "kernel");
     const char *shim_filename = qdict_get_try_str(machine_opts, "shim");
     const char *initrd_filename = qdict_get_try_str(machine_opts, "initrd");
     const char *kernel_cmdline = qdict_get_try_str(machine_opts, "append");
 
-    if (kernel_filename == NULL) {
+    if (kernel_obj == NULL) {
         if (kernel_cmdline != NULL) {
             error_report("-append only allowed with -kernel option");
             exit(1);
@@ -2880,6 +2915,7 @@ void qemu_init(int argc, char **argv)
     qemu_add_opts(&qemu_mem_opts);
     qemu_add_opts(&qemu_smp_opts);
     qemu_add_opts(&qemu_boot_opts);
+    qemu_add_opts(&qemu_kernel_opts);
     qemu_add_opts(&qemu_add_fd_opts);
     qemu_add_opts(&qemu_object_opts);
     qemu_add_opts(&qemu_tpmdev_opts);
@@ -3016,7 +3052,8 @@ void qemu_init(int argc, char **argv)
                 dpy.type = DISPLAY_TYPE_NONE;
                 break;
             case QEMU_OPTION_kernel:
-                qdict_put_str(machine_opts_dict, "kernel", optarg);
+                machine_parse_property_opt(qemu_find_opts("kernel-opts"),
+                                           "kernel", optarg);
                 break;
             case QEMU_OPTION_shim:
                 qdict_put_str(machine_opts_dict, "shim", optarg);

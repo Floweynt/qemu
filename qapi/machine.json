@@ -1657,6 +1657,69 @@
      '*strict': 'bool' } }
 
 ##
+# @KernelBootProtocol:
+#
+# Boot protocol used to hand off to the kernel.
+#
+# @native: Use the machine's native boot protocol (default)
+#
+# @limine: Use the Limine boot protocol
+#
+# Since: 9.2
+##
+{ 'enum': 'KernelBootProtocol',
+  'data': [ 'native', 'limine' ] }
+
+##
+# @KernelPagingMode:
+#
+# x86-64 paging modes for Limine boot protocol.
+#
+# @4level: 4-level paging
+#
+# @5level: 5-level paging (LA57)
+#
+# Since: 9.2
+##
+{ 'enum': 'KernelPagingMode',
+  'data': [ '4level', '5level' ] }
+
+##
+# @KernelConfiguration:
+#
+# Schema for kernel boot configuration.
+#
+# @file: Path to the kernel image file
+#
+# @protocol: Boot protocol to use
+#
+# @kaslr: Enable kernel address space layout randomisation
+#     (Limine only)
+#
+# @randomise-hhdm-base: Randomise the higher half direct map base
+#     address (Limine only)
+#
+# @max-paging-mode: Maximum paging mode (Limine only)
+#
+# @min-paging-mode: Minimum paging mode (Limine only)
+#
+# @paging-mode: Set both max and min paging mode (Limine only)
+#
+# @resolution: Display resolution as WxHxBPP (Limine only)
+#
+# Since: 9.2
+##
+{ 'struct': 'KernelConfiguration', 'data': {
+     'file': 'str',
+     '*protocol': 'KernelBootProtocol',
+     '*kaslr': 'bool',
+     '*randomise-hhdm-base': 'bool',
+     '*max-paging-mode': 'KernelPagingMode',
+     '*min-paging-mode': 'KernelPagingMode',
+     '*paging-mode': 'KernelPagingMode',
+     '*resolution': 'str' } }
+
+##
 # @SMPConfiguration:
 #
 # Schema for CPU topology configuration.  A missing value lets QEMU

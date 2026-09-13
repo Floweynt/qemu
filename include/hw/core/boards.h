@@ -437,6 +437,14 @@ struct MachineState {
     uint64_t   ram_slots;
     BootConfiguration boot_config;
     char *kernel_filename;
+    KernelBootProtocol kernel_boot_protocol;
+    bool kernel_kaslr;
+    bool kernel_randomise_hhdm_base;
+    bool has_kernel_max_paging_mode;
+    KernelPagingMode kernel_max_paging_mode;
+    bool has_kernel_min_paging_mode;
+    KernelPagingMode kernel_min_paging_mode;
+    char *kernel_resolution;
     char *kernel_cmdline;
     char *shim_filename;
     char *initrd_filename;

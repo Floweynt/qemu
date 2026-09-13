@@ -235,19 +235,77 @@ const size_t hw_compat_4_1_len = G_N_ELEMENTS(hw_compat_4_1);
 
 MachineState *current_machine;
 
-static char *machine_get_kernel(Object *obj, Error **errp)
+static void machine_get_kernel(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
 {
     MachineState *ms = MACHINE(obj);
-
-    return g_strdup(ms->kernel_filename);
+    KernelConfiguration config = {
+        .file = ms->kernel_filename,
+        .has_protocol = true,
+        .protocol = ms->kernel_boot_protocol,
+        .has_kaslr = true,
+        .kaslr = ms->kernel_kaslr,
+        .has_randomise_hhdm_base = true,
+        .randomise_hhdm_base = ms->kernel_randomise_hhdm_base,
+        .has_max_paging_mode = ms->has_kernel_max_paging_mode,
+        .max_paging_mode = ms->kernel_max_paging_mode,
+        .has_min_paging_mode = ms->has_kernel_min_paging_mode,
+        .min_paging_mode = ms->kernel_min_paging_mode,
+        .resolution = ms->kernel_resolution,
+    };
+    KernelConfiguration *p = &config;
+    visit_type_KernelConfiguration(v, name, &p, &error_abort);
 }
 
-static void machine_set_kernel(Object *obj, const char *value, Error **errp)
+static void machine_set_kernel(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
 {
+    ERRP_GUARD();
     MachineState *ms = MACHINE(obj);
+    KernelConfiguration *config = NULL;
+
+    if (!visit_type_KernelConfiguration(v, name, &config, errp)) {
+        return;
+    }
+
+    KernelBootProtocol proto = config->has_protocol
+        ? config->protocol : KERNEL_BOOT_PROTOCOL_NATIVE;
+
+    if (proto != KERNEL_BOOT_PROTOCOL_LIMINE) {
+        if (config->has_kaslr || config->has_randomise_hhdm_base ||
+            config->has_max_paging_mode || config->has_min_paging_mode ||
+            config->has_paging_mode || config->resolution) {
+            error_setg(errp,
+                "kaslr, randomise-hhdm-base, paging-mode, and resolution "
+                "require protocol=limine");
+            qapi_free_KernelConfiguration(config);
+            return;
+        }
+    }
+
+    if (config->has_paging_mode) {
+        if (!config->has_max_paging_mode) {
+            config->max_paging_mode = config->paging_mode;
+            config->has_max_paging_mode = true;
+        }
+        if (!config->has_min_paging_mode) {
+            config->min_paging_mode = config->paging_mode;
+            config->has_min_paging_mode = true;
+        }
+    }
 
     g_free(ms->kernel_filename);
-    ms->kernel_filename = g_strdup(value);
+    g_free(ms->kernel_resolution);
+    ms->kernel_filename = config->file;
+    ms->kernel_boot_protocol = proto;
+    ms->kernel_kaslr = config->kaslr;
+    ms->kernel_randomise_hhdm_base = config->randomise_hhdm_base;
+    ms->has_kernel_max_paging_mode = config->has_max_paging_mode;
+    ms->kernel_max_paging_mode = config->max_paging_mode;
+    ms->has_kernel_min_paging_mode = config->has_min_paging_mode;
+    ms->kernel_min_paging_mode = config->min_paging_mode;
+    ms->kernel_resolution = config->resolution;
+    free(config);
 }
 
 static char *machine_get_shim(Object *obj, Error **errp)
@@ -1084,10 +1142,11 @@ static void machine_class_init(ObjectClass *oc, const void *data)
 
     mc->create_default_memdev = create_default_memdev;
 
-    object_class_property_add_str(oc, "kernel",
-        machine_get_kernel, machine_set_kernel);
+    object_class_property_add(oc, "kernel", "KernelConfiguration",
+        machine_get_kernel, machine_set_kernel,
+        NULL, NULL);
     object_class_property_set_description(oc, "kernel",
-        "Linux kernel image file");
+        "Kernel boot configuration");
 
     object_class_property_add_str(oc, "shim",
         machine_get_shim, machine_set_shim);
@@ -1304,6 +1363,7 @@ static void machine_finalize(Object *obj)
     machine_free_boot_config(ms);
     g_free(ms->shim_filename);
     g_free(ms->kernel_filename);
+    g_free(ms->kernel_resolution);
     g_free(ms->initrd_filename);
     g_free(ms->kernel_cmdline);
     g_free(ms->dtb);
