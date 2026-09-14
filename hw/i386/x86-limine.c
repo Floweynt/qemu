@@ -1241,9 +1241,14 @@ static void handle_bootloader_performance(LimineResponder *lr)
         return;
     }
 
+    // blazingly fast
     struct limine_bootloader_performance_response resp = {
         .revision = cpu_to_le64(0),
+        .reset_usec = 0,
+        .init_usec = 0,
+        .exec_usec = 0,
     };
+
     LR_RESPOND(lr, request, limine_bootloader_performance_request, &resp);
 }
 
@@ -1480,7 +1485,7 @@ static void setup_cpu_state(X86CPU *cpu, bool la57, hwaddr cr3, hwaddr gdt,
     cpu_x86_load_seg_cache(env, R_FS, LIMINE_DS64, 0, 0xFFFFFFFF, data64_flags);
     cpu_x86_load_seg_cache(env, R_GS, LIMINE_DS64, 0, 0xFFFFFFFF, data64_flags);
 
-    env->regs[R_ESP] = stack;
+    env->regs[R_ESP] = stack - 8; // need to unalign by 8 bytes
     env->eip = entry;
     env->eflags = 0x2;
 
