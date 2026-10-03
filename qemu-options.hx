@@ -4665,7 +4665,8 @@ DEF("initrd", HAS_ARG, QEMU_OPTION_initrd, \
 SRST(initrd)
 
 ``-initrd file``
-    Use file as initial ram disk.
+    Use file as initial ram disk.  This option may be specified multiple
+    times to load multiple modules.
 
 ``-initrd "file1 arg=foo,file2"``
     This syntax is only available with multiboot.
@@ -4678,6 +4679,25 @@ SRST(initrd)
     Multiboot only. Use bzImage as the first module with
     "``earlyprintk=xen,keep root=/dev/xvda1``" as its command line,
     and initrd.img as the second module.
+
+    With ``-kernel ...,protocol=limine``, each ``-initrd`` specifies one
+    module.  A space separates the key=value options from the freeform
+    module string (``module_string`` in the Limine protocol)::
+
+        -initrd "path=mod.ko,name=/boot/mod.ko my cmdline x=y"
+
+    ``path``
+        Path to the module file on disk (required).  A bare path with
+        no ``=`` is shorthand for ``path=file``.
+
+    ``name``
+        Name presented to the kernel (defaults to ``path``).
+
+    Examples::
+
+        -initrd mod.ko
+        -initrd "mod.ko my_args x=y"
+        -initrd "path=mod.ko,name=/boot/mod.ko extra_arg=1"
 
 ERST
 

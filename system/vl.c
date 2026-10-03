@@ -176,6 +176,7 @@ static const char *accelerators;
 static bool have_custom_ram_size;
 static const char *ram_memdev_id;
 static QDict *machine_opts_dict;
+static GPtrArray *initrd_modules;
 static QTAILQ_HEAD(, ObjectOption) object_opts = QTAILQ_HEAD_INITIALIZER(object_opts);
 static QTAILQ_HEAD(, DeviceOption) device_opts = QTAILQ_HEAD_INITIALIZER(device_opts);
 static int display_remote;
@@ -2055,6 +2056,8 @@ static void qemu_apply_machine_options(QDict *qdict)
     object_set_props_from_keyval(OBJECT(current_machine), qdict,
                                  false, &error_fatal);
 
+    current_machine->initrd_modules = g_steal_pointer(&initrd_modules);
+
     if (semihosting_enabled(false) && !semihosting_get_argc()) {
         /* fall back to the -kernel/-append */
         semihosting_arg_fallback(current_machine->kernel_filename, current_machine->kernel_cmdline);
@@ -3059,7 +3062,13 @@ void qemu_init(int argc, char **argv)
                 qdict_put_str(machine_opts_dict, "shim", optarg);
                 break;
             case QEMU_OPTION_initrd:
-                qdict_put_str(machine_opts_dict, "initrd", optarg);
+                if (!initrd_modules) {
+                    initrd_modules = g_ptr_array_new_with_free_func(g_free);
+                }
+                g_ptr_array_add(initrd_modules, g_strdup(optarg));
+                if (!qdict_haskey(machine_opts_dict, "initrd")) {
+                    qdict_put_str(machine_opts_dict, "initrd", optarg);
+                }
                 break;
             case QEMU_OPTION_append:
                 qdict_put_str(machine_opts_dict, "append", optarg);

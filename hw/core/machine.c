@@ -1365,6 +1365,9 @@ static void machine_finalize(Object *obj)
     g_free(ms->kernel_filename);
     g_free(ms->kernel_resolution);
     g_free(ms->initrd_filename);
+    if (ms->initrd_modules) {
+        g_ptr_array_free(ms->initrd_modules, true);
+    }
     g_free(ms->kernel_cmdline);
     g_free(ms->dtb);
     g_free(ms->dumpdtb);

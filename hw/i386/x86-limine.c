@@ -9,7 +9,10 @@
 #include "target/i386/cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
+#include "qemu/keyval.h"
 #include "qemu/timer.h"
+#include "qapi/error.h"
+#include "qobject/qdict.h"
 #include "hw/core/loader.h"
 #include "hw/nvram/fw_cfg.h"
 #include "system/address-spaces.h"
@@ -1091,14 +1094,75 @@ static void handle_executable_file(LimineResponder *lr, FILE *f,
     LR_RESPOND(lr, request, limine_executable_file_request, &resp);
 }
 
-static void handle_modules(LimineResponder *lr, const char *initrd_filename,
-                           LimineModuleRegion *regions, int *region_count)
+static hwaddr load_module(LimineResponder *lr, const char *arg,
+                          GArray *regions)
+{
+    const char *string = strchr(arg, ' ');
+    g_autofree char *options = string ? g_strndup(arg, string - arg)
+                                     : g_strdup(arg);
+    g_autoptr(QDict) opts = keyval_parse(options, "path", NULL, &error_fatal);
+    const char *path = qdict_get_try_str(opts, "path");
+    const char *name = qdict_get_try_str(opts, "name");
+
+    for (const QDictEntry *entry = qdict_first(opts); entry;
+         entry = qdict_next(opts, entry)) {
+        const char *key = qdict_entry_key(entry);
+
+        if (strcmp(key, "path") && strcmp(key, "name")) {
+            error_report("limine: unknown module option '%s'", key);
+            exit(1);
+        }
+        if (!qdict_get_try_str(opts, key)) {
+            error_report("limine: module option '%s' must be a string", key);
+            exit(1);
+        }
+    }
+    if (!path || !*path) {
+        error_report("limine: module path is required");
+        exit(1);
+    }
+
+    FILE *mf = fopen(path, "rb");
+    if (!mf) {
+        error_report("limine: cannot open initrd '%s': %s", path,
+                     strerror(errno));
+        exit(1);
+    }
+
+    if (fseek(mf, 0, SEEK_END) != 0) {
+        error_report("limine: cannot seek initrd '%s': %s", path,
+                     strerror(errno));
+        exit(1);
+    }
+    long mod_size = ftell(mf);
+    if (mod_size < 0) {
+        error_report("limine: cannot size initrd '%s': %s", path,
+                     strerror(errno));
+        exit(1);
+    }
+
+    hwaddr file_addr = stage_limine_file(lr, mf, mod_size, name ? name : path,
+                                        string ? string + 1 : "");
+    fclose(mf);
+
+    struct limine_file *lf = lr_ptr(lr, file_addr);
+    LimineModuleRegion region = {
+        .base = le64_to_cpu(lf->address) - lr->hhdm_off,
+        .size = QEMU_ALIGN_UP((uint64_t)mod_size, 4096),
+    };
+    g_array_append_val(regions, region);
+    return file_addr;
+}
+
+static void handle_modules(LimineResponder *lr, MachineState *machine,
+                           GArray *regions)
 {
     static const uint64_t id[] = LIMINE_MODULE_REQUEST_ID;
-    *region_count = 0;
+    GPtrArray *modules = machine->initrd_modules;
+    unsigned int count = modules ? modules->len : !!machine->initrd_filename;
 
     hwaddr request = lr_find(lr, id);
-    if (!request && initrd_filename) {
+    if (!request && count) {
         warn_report("limine: -initrd given but kernel has no module request");
         return;
     }
@@ -1107,42 +1171,20 @@ static void handle_modules(LimineResponder *lr, const char *initrd_filename,
         return;
     }
 
-    if (!initrd_filename) {
-        struct limine_module_response resp = {
-            .revision = cpu_to_le64(0),
-            .module_count = 0,
-            .modules = 0,
-        };
-        LR_RESPOND(lr, request, limine_module_request, &resp);
-        return;
+    hwaddr ptr_addr = count ? lr_alloc(lr, count * sizeof(uint64_t), 8) : 0;
+    for (unsigned int i = 0; i < count; i++) {
+        const char *arg = modules ? g_ptr_array_index(modules, i)
+                                  : machine->initrd_filename;
+        hwaddr file_addr = load_module(lr, arg, regions);
+        uint64_t *ptrs = lr_ptr(lr, ptr_addr);
+
+        ptrs[i] = lr_virt(lr, file_addr);
     }
-
-    FILE *mf = fopen(initrd_filename, "rb");
-    if (!mf) {
-        error_report("limine: cannot open initrd '%s': %s", initrd_filename,
-                     strerror(errno));
-        exit(1);
-    }
-
-    fseek(mf, 0, SEEK_END);
-    size_t mod_size = ftell(mf);
-
-    hwaddr file_addr = stage_limine_file(lr, mf, mod_size, initrd_filename, "");
-    fclose(mf);
-
-    struct limine_file *lf = lr_ptr(lr, file_addr);
-    hwaddr content_phys = le64_to_cpu(lf->address) - lr->hhdm_off;
-    regions[0] =
-        (LimineModuleRegion){ content_phys, QEMU_ALIGN_UP(mod_size, 4096) };
-    *region_count = 1;
-
-    hwaddr ptr_addr =
-        lr_copy(lr, &(uint64_t){ lr_virt(lr, file_addr) }, sizeof(uint64_t), 8);
 
     struct limine_module_response resp = {
         .revision = cpu_to_le64(0),
-        .module_count = cpu_to_le64(1),
-        .modules = lr_virt(lr, ptr_addr),
+        .module_count = cpu_to_le64(count),
+        .modules = count ? lr_virt(lr, ptr_addr) : 0,
     };
     LR_RESPOND(lr, request, limine_module_request, &resp);
 }
@@ -1779,10 +1821,9 @@ bool x86_load_limine(const char *kernel_filename, FILE *f, int kernel_file_size,
 
     handle_executable_file(&lr, f, kernel_file_size, kernel_filename,
                            cmdline ? cmdline : "");
-    LimineModuleRegion mod_regions[16];
-    int mod_region_count = 0;
-    handle_modules(&lr, machine->initrd_filename, mod_regions,
-                   &mod_region_count);
+    g_autoptr(GArray) mod_regions =
+        g_array_new(false, false, sizeof(LimineModuleRegion));
+    handle_modules(&lr, machine, mod_regions);
 
     handle_rsdp(&lr);
     handle_smbios(&lr);
@@ -1803,8 +1844,8 @@ bool x86_load_limine(const char *kernel_filename, FILE *f, int kernel_file_size,
     rom_add_blob_fixed("limine-gdt", limine_gdt, sizeof(limine_gdt), gdt_phys);
     uint64_t gdt_virt = hhdm_off + gdt_phys;
 
-    handle_memmap(&lr, physical_base, image_size, &pool, mod_regions,
-                  mod_region_count);
+    handle_memmap(&lr, physical_base, image_size, &pool,
+                  (LimineModuleRegion *)mod_regions->data, mod_regions->len);
 
     hwaddr bsp_stack = stack_tops[0];
 

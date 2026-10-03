@@ -448,6 +448,7 @@ struct MachineState {
     char *kernel_cmdline;
     char *shim_filename;
     char *initrd_filename;
+    GPtrArray *initrd_modules;
     const char *cpu_type;
     AccelState *accelerator;
     CPUArchIdList *possible_cpus;
